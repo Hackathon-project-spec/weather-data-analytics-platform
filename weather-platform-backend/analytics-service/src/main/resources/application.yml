@@ -1,0 +1,31 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: analytics-service
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+clickhouse:
+  url: ${CLICKHOUSE_URL:jdbc:ch://localhost:8123/weather_db}
+  user: ${CLICKHOUSE_USER:default}
+  password: ${CLICKHOUSE_PASSWORD:}
+
+app:
+  kafka:
+    listener:
+      enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  health:
+    redis:
+      enabled: false

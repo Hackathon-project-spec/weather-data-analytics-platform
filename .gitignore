@@ -1,0 +1,39 @@
+@"
+# Secrets / environment
+.env
+.env.*
+!.env.example
+
+# Java / Spring Boot
+**/target/
+*.class
+*.jar
+*.war
+
+# Node / React
+**/node_modules/
+**/dist/
+**/build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary
+*.tmp
+*.temp
+"@ | Set-Content .gitignore

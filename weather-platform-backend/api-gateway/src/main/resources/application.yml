@@ -1,0 +1,29 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+services:
+  ingestion:
+    url: ${INGESTION_SERVICE_URL:http://localhost:8081}
+  citizen:
+    url: ${CITIZEN_SERVICE_URL:http://localhost:8082}
+  verification:
+    url: ${VERIFICATION_SERVICE_URL:http://localhost:8083}
+  analytics:
+    url: ${ANALYTICS_SERVICE_URL:http://localhost:8084}
+
+app:
+  kafka:
+    listener:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
