@@ -1,15 +1,21 @@
 package in.gov.moes.sih26069.analytics.service;
 
+import in.gov.moes.sih26069.analytics.entity.WeatherAlertEntity;
+import in.gov.moes.sih26069.analytics.repository.WeatherAlertRepository;
 import in.gov.moes.sih26069.common.enums.AlertSeverity;
 import in.gov.moes.sih26069.common.enums.DisasterCategory;
 import in.gov.moes.sih26069.common.event.WeatherAlertEvent;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,10 +23,22 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AlertManagementService {
 
     private static final Logger log = LoggerFactory.getLogger(AlertManagementService.class);
+    private static final String REDIS_ALERTS_KEY = "weather:alerts:active";
+
+    @Autowired(required = false)
+    private WeatherAlertRepository alertRepository;
+
+    @Autowired(required = false)
+    private RedisTemplate<String, Object> redisTemplate;
 
     private final Map<String, WeatherAlertEvent> activeAlerts = new ConcurrentHashMap<>();
 
     @PostConstruct
+    public void init() {
+        seedInitialAlerts();
+        loadActiveAlertsFromPostgres();
+    }
+
     public void seedInitialAlerts() {
         WeatherAlertEvent a1 = new WeatherAlertEvent();
         a1.setAlertId("alt-seed-mum");
@@ -36,7 +54,7 @@ public class AlertManagementService {
         a1.setCenterLon(72.8656);
         a1.setRadiusKm(20.0);
         a1.setActive(true);
-        activeAlerts.put(a1.getAlertId(), a1);
+        cacheActiveAlert(a1);
 
         WeatherAlertEvent a2 = new WeatherAlertEvent();
         a2.setAlertId("alt-seed-odi");
@@ -52,17 +70,67 @@ public class AlertManagementService {
         a2.setCenterLon(85.8312);
         a2.setRadiusKm(35.0);
         a2.setActive(true);
-        activeAlerts.put(a2.getAlertId(), a2);
+        cacheActiveAlert(a2);
+    }
+
+    private void loadActiveAlertsFromPostgres() {
+        if (alertRepository == null) return;
+        try {
+            List<WeatherAlertEntity> dbAlerts = alertRepository.findByIsActiveTrueAndExpiresAtAfterOrderBySentAtDesc(Instant.now());
+            for (WeatherAlertEntity e : dbAlerts) {
+                WeatherAlertEvent event = entityToEvent(e);
+                activeAlerts.put(event.getAlertId(), event);
+            }
+            log.info("Loaded {} active alerts from PostgreSQL weather_alerts", dbAlerts.size());
+        } catch (Exception e) {
+            log.debug("PostgreSQL alerts init check (using in-memory): {}", e.getMessage());
+        }
+    }
+
+    public void cacheActiveAlert(WeatherAlertEvent alert) {
+        if (alert == null || alert.getAlertId() == null) return;
+        activeAlerts.put(alert.getAlertId(), alert);
+
+        // Update Redis Cache
+        if (redisTemplate != null) {
+            try {
+                redisTemplate.opsForHash().put(REDIS_ALERTS_KEY, alert.getAlertId(), alert);
+                redisTemplate.expire(REDIS_ALERTS_KEY, Duration.ofHours(6));
+                log.debug("Active alert cached in Redis key {}: ID={}", REDIS_ALERTS_KEY, alert.getAlertId());
+            } catch (Exception e) {
+                log.debug("Redis cache write notice: {}", e.getMessage());
+            }
+        }
     }
 
     @KafkaListener(topics = "weather.alerts.broadcast", containerFactory = "alertListenerFactory", autoStartup = "${app.kafka.listener.enabled:true}")
     public void onAlertReceived(WeatherAlertEvent alert) {
         if (alert == null || alert.getAlertId() == null) return;
-        log.info("Received active weather alert from Kafka: ID={} Headline={}", alert.getAlertId(), alert.getHeadline());
-        activeAlerts.put(alert.getAlertId(), alert);
+        log.info("[INFO] alertId={} service=analytics-service Received active weather alert from Kafka: Headline={}",
+                alert.getAlertId(), alert.getHeadline());
+        cacheActiveAlert(alert);
     }
 
     public List<WeatherAlertEvent> getActiveAlerts() {
+        // Try reading from Redis first if available
+        if (redisTemplate != null) {
+            try {
+                Map<Object, Object> entries = redisTemplate.opsForHash().entries(REDIS_ALERTS_KEY);
+                if (entries != null && !entries.isEmpty()) {
+                    List<WeatherAlertEvent> cached = new ArrayList<>();
+                    for (Object val : entries.values()) {
+                        if (val instanceof WeatherAlertEvent alert) {
+                            cached.add(alert);
+                        }
+                    }
+                    if (!cached.isEmpty()) {
+                        return cached;
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Redis cache read notice (falling back to memory): {}", e.getMessage());
+            }
+        }
         return new ArrayList<>(activeAlerts.values());
     }
 
@@ -76,7 +144,7 @@ public class AlertManagementService {
         xml.append("  <status>Actual</status>\n");
         xml.append("  <msgType>Alert</msgType>\n");
         xml.append("  <scope>Public</scope>\n");
-        for (WeatherAlertEvent a : activeAlerts.values()) {
+        for (WeatherAlertEvent a : getActiveAlerts()) {
             xml.append("  <info>\n");
             xml.append("    <category>Met</category>\n");
             xml.append("    <event>").append(a.getCategory()).append("</event>\n");
@@ -93,6 +161,24 @@ public class AlertManagementService {
         }
         xml.append("</alert>");
         return xml.toString();
+    }
+
+    private WeatherAlertEvent entityToEvent(WeatherAlertEntity e) {
+        WeatherAlertEvent event = new WeatherAlertEvent();
+        event.setAlertId(e.getId());
+        event.setIdentifier(e.getIdentifier());
+        event.setSeverity(e.getSeverity());
+        event.setCategory(e.getEventCategory());
+        event.setHeadline(e.getHeadline());
+        event.setDescription(e.getDescription());
+        event.setInstruction(e.getInstruction());
+        event.setAffectedState(e.getAffectedState());
+        event.setAffectedDistrict(e.getAffectedDistrict());
+        event.setCenterLat(e.getCenterLat());
+        event.setCenterLon(e.getCenterLon());
+        event.setRadiusKm(e.getRadiusKm());
+        event.setActive(e.getIsActive());
+        return event;
     }
 
     private String escapeXml(String text) {

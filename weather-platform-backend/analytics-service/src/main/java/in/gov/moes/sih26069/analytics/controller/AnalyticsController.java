@@ -25,16 +25,41 @@ public class AnalyticsController {
     @Autowired
     private AlertManagementService alertService;
 
-    @GetMapping("/analytics/timeseries")
+    @GetMapping({"/analytics/timeseries", "/analytics/rainfall"})
     public ResponseEntity<List<TimeSeriesPoint>> getTimeSeries(
-            @RequestParam(defaultValue = "stn-mum-01") String stationId,
-            @RequestParam(defaultValue = "24h") String range) {
+            @RequestParam(value = "stationId", defaultValue = "stn-mum-01") String stationId,
+            @RequestParam(value = "range", defaultValue = "24h") String range) {
         return ResponseEntity.ok(timeSeriesService.getTimeSeriesForStation(stationId, range));
     }
 
     @GetMapping("/analytics/anomalies")
     public ResponseEntity<List<Map<String, Object>>> getDistrictAnomalies() {
         return ResponseEntity.ok(timeSeriesService.getDistrictAnomalies());
+    }
+
+    @GetMapping("/analytics/events")
+    public ResponseEntity<Map<String, Object>> getAnalyticsEvents() {
+        return ResponseEntity.ok(Map.of(
+                "totalAiEvents", timeSeriesService.getTotalAiEventsRecorded(),
+                "recentEvents", timeSeriesService.getRecentAiEventsAnalytics()
+        ));
+    }
+
+    @GetMapping("/analytics/regions")
+    public ResponseEntity<List<Map<String, Object>>> getRegionalAnalytics() {
+        return ResponseEntity.ok(timeSeriesService.getRegionalSummary());
+    }
+
+    @GetMapping("/analytics/severity")
+    public ResponseEntity<Map<String, Object>> getSeverityBreakdown() {
+        return ResponseEntity.ok(timeSeriesService.getSeverityBreakdown());
+    }
+
+    @GetMapping("/analytics/timeline")
+    public ResponseEntity<List<TimeSeriesPoint>> getTimeline(
+            @RequestParam(value = "stationId", defaultValue = "stn-mum-01") String stationId,
+            @RequestParam(value = "range", defaultValue = "24h") String range) {
+        return ResponseEntity.ok(timeSeriesService.getTimeSeriesForStation(stationId, range));
     }
 
     @GetMapping("/alerts/active")

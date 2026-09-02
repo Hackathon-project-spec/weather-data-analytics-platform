@@ -25,20 +25,20 @@ public class CitizenReportController {
 
     @GetMapping
     public ResponseEntity<List<CitizenReportEntity>> getAllReports(
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) String state) {
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "state", required = false) String state) {
         return ResponseEntity.ok(reportService.getAllReports(status, state));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<CitizenReportEntity> getReportById(@PathVariable String id) {
+    public ResponseEntity<CitizenReportEntity> getReportById(@PathVariable("id") String id) {
         return reportService.getReportById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping("/{id}/upvote")
-    public ResponseEntity<CitizenReportEntity> upvoteReport(@PathVariable String id) {
+    public ResponseEntity<CitizenReportEntity> upvoteReport(@PathVariable("id") String id) {
         return reportService.upvoteReport(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());

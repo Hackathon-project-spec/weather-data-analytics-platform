@@ -54,3 +54,20 @@ CREATE TABLE IF NOT EXISTS weather_db.social_mentions (
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (disaster_category, state, district, timestamp)
 TTL toDate(timestamp) + INTERVAL 90 DAY;
+
+CREATE TABLE IF NOT EXISTS weather_db.ai_events_analytics (
+    timestamp DateTime64(3, 'Asia/Kolkata'),
+    event_id String,
+    event_type LowCardinality(String),
+    city LowCardinality(String),
+    state LowCardinality(String),
+    latitude Float64,
+    longitude Float64,
+    severity LowCardinality(String),
+    confidence Float32,
+    report_count UInt32,
+    operational_status LowCardinality(String)
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(timestamp)
+ORDER BY (event_type, severity, state, timestamp)
+TTL toDate(timestamp) + INTERVAL 365 DAY;

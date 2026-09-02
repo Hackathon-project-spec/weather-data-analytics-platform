@@ -30,11 +30,20 @@ public class IngestionController {
     @Autowired
     private ScenarioLabService scenarioLabService;
 
+    @Autowired
+    private in.gov.moes.sih26069.ingestion.service.AiEventIngestionService aiEventIngestionService;
+
     @Autowired(required = false)
     private KafkaTemplate<String, TelemetryEvent> telemetryKafkaTemplate;
 
     @Autowired(required = false)
     private KafkaTemplate<String, SocialFeedEvent> socialKafkaTemplate;
+
+    @PostMapping({"/ingestion/events", "/ingest/events"})
+    public ResponseEntity<Map<String, Object>> ingestAiEvent(@jakarta.validation.Valid @RequestBody in.gov.moes.sih26069.common.dto.AiEventDTO event) {
+        Map<String, Object> result = aiEventIngestionService.ingestAiEvent(event);
+        return ResponseEntity.ok(result);
+    }
 
     @GetMapping("/stations")
     public ResponseEntity<List<StationDTO>> getAllStations() {
@@ -59,7 +68,7 @@ public class IngestionController {
     }
 
     @PostMapping("/simulator/start")
-    public ResponseEntity<Map<String, Object>> startSimulator(@RequestParam(defaultValue = "20") int rate) {
+    public ResponseEntity<Map<String, Object>> startSimulator(@RequestParam(value = "rate", defaultValue = "20") int rate) {
         simulatorEngine.setTargetRate(rate);
         simulatorEngine.setRunning(true);
         return ResponseEntity.ok(Map.of("status", "RUNNING", "rate", simulatorEngine.getTargetRate()));
@@ -72,7 +81,7 @@ public class IngestionController {
     }
 
     @PostMapping("/simulator/rate")
-    public ResponseEntity<Map<String, Object>> updateRate(@RequestParam int rate) {
+    public ResponseEntity<Map<String, Object>> updateRate(@RequestParam(value = "rate") int rate) {
         simulatorEngine.setTargetRate(rate);
         return ResponseEntity.ok(Map.of("status", "UPDATED", "rate", simulatorEngine.getTargetRate()));
     }

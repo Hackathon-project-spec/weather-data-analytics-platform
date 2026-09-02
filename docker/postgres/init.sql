@@ -97,6 +97,31 @@ CREATE TABLE IF NOT EXISTS weather_alerts (
 CREATE INDEX IF NOT EXISTS idx_alerts_active ON weather_alerts(is_active, expires_at);
 CREATE INDEX IF NOT EXISTS idx_alerts_state_district ON weather_alerts(affected_state, affected_district);
 
+-- AI Structured Events Ingestion Table
+CREATE TABLE IF NOT EXISTS ai_events (
+    id VARCHAR(64) PRIMARY KEY,
+    event_type VARCHAR(64) NOT NULL,
+    source VARCHAR(64) NOT NULL DEFAULT 'AI_ANALYSIS',
+    city VARCHAR(128),
+    state VARCHAR(64),
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    severity VARCHAR(32) NOT NULL,
+    confidence DOUBLE PRECISION NOT NULL,
+    report_count INT DEFAULT 0,
+    summary TEXT,
+    operational_status VARCHAR(32) NOT NULL DEFAULT 'MONITORING',
+    observed_at TIMESTAMP WITH TIME ZONE,
+    processed_at TIMESTAMP WITH TIME ZONE,
+    metadata JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_events_status ON ai_events(operational_status);
+CREATE INDEX IF NOT EXISTS idx_ai_events_type ON ai_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_ai_events_created_at ON ai_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_events_location ON ai_events(latitude, longitude);
+
 -- Seed Initial 30+ Weather Stations across Major Indian States/Districts
 INSERT INTO stations (id, code, name, state, district, latitude, longitude, altitude_m, station_type) VALUES
 ('stn-mum-01', 'BOM-COL', 'Mumbai Colaba AWS', 'Maharashtra', 'Mumbai City', 18.8997, 72.8153, 11.0, 'AWS'),

@@ -39,6 +39,8 @@ public class VerificationScoringEngine {
     private final AtomicLong totalSuspiciousCount = new AtomicLong(0);
     private final AtomicLong totalDebunkedCount = new AtomicLong(0);
 
+    private final Set<String> processedReportIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
     @KafkaListener(topics = "weather.social.feed", containerFactory = "socialFeedListenerFactory", autoStartup = "${app.kafka.listener.enabled:true}")
     public void onSocialFeedReceived(SocialFeedEvent event) {
         if (event == null || event.getDistrict() == null) return;
@@ -49,7 +51,14 @@ public class VerificationScoringEngine {
     @KafkaListener(topics = "weather.citizen.reports", containerFactory = "citizenReportListenerFactory", autoStartup = "${app.kafka.listener.enabled:true}")
     public void onCitizenReportReceived(CitizenReportEvent report) {
         if (report == null) return;
-        log.info("Processing citizen report from Kafka: ID={} Category={} Lat={} Lon={}",
+
+        // Idempotency: avoid duplicate verification processing
+        if (report.getReportId() != null && !processedReportIds.add(report.getReportId())) {
+            log.info("[INFO] reportId={} service=verification-engine Duplicate citizen report received via Kafka, skipping evaluation.", report.getReportId());
+            return;
+        }
+
+        log.info("[INFO] reportId={} service=verification-engine Processing citizen report from Kafka: Category={} Lat={} Lon={}",
                 report.getReportId(), report.getCategory(), report.getLatitude(), report.getLongitude());
         VerifiedReportEvent verifiedEvent = evaluateReport(report);
 

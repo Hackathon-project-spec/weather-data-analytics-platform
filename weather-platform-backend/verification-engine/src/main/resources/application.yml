@@ -16,7 +16,7 @@ app:
     url: ${INGESTION_SERVICE_URL:http://localhost:8081}
   kafka:
     listener:
-      enabled: false
+      enabled: ${APP_KAFKA_LISTENER_ENABLED:true}
 
 management:
   endpoints:

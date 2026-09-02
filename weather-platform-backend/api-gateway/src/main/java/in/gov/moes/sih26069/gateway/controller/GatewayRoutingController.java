@@ -35,7 +35,9 @@ public class GatewayRoutingController {
     @RequestMapping(value = {
             "/api/v1/stations/**",
             "/api/v1/simulator/**",
-            "/api/v1/ingest/**"
+            "/api/v1/ingest/**",
+            "/api/v1/ingestion/**",
+            "/api/ingestion/**"
     }, method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
     public ResponseEntity<byte[]> routeIngestionService(@RequestBody(required = false) byte[] body, HttpMethod method, HttpServletRequest request) {
         return forwardRequest(ingestionServiceUrl, request, method, body);

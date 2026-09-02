@@ -76,4 +76,26 @@ public class CitizenReportServiceTest {
         assertEquals(45, entity.getVerificationLatencyMs());
         verify(repository, times(1)).save(entity);
     }
+
+    @Test
+    public void testDuplicateReportSubmissionReturnsExisting() {
+        CitizenReportEntity existing = new CitizenReportEntity();
+        existing.setId("rep-existing-123");
+        existing.setReporterName("Original Citizen");
+        existing.setCategory(DisasterCategory.FLOOD);
+
+        when(repository.findById("rep-existing-123")).thenReturn(Optional.of(existing));
+
+        CitizenReportEvent duplicateEvent = new CitizenReportEvent();
+        duplicateEvent.setReportId("rep-existing-123");
+        duplicateEvent.setReporterName("Duplicate Submission");
+        duplicateEvent.setCategory(DisasterCategory.FLOOD);
+
+        CitizenReportEntity result = reportService.submitReport(duplicateEvent);
+
+        assertEquals("rep-existing-123", result.getId());
+        assertEquals("Original Citizen", result.getReporterName());
+        // Verify save was NOT called for duplicate!
+        verify(repository, never()).save(any(CitizenReportEntity.class));
+    }
 }

@@ -2,47 +2,84 @@ $ErrorActionPreference = "Continue"
 
 Write-Host ""
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host " SIH26069 PLATFORM QUICK VALIDATION" -ForegroundColor White
+Write-Host " SIH26069 PLATFORM COMPLETE HEALTH & API VALIDATION" -ForegroundColor White
 Write-Host "==================================================" -ForegroundColor Cyan
 
-$urls = @(
-@{ Name = "Ingestion"; Url = "http://localhost:8081/api/v1/stations" },
-@{ Name = "Citizen"; Url = "http://localhost:8082/api/v1/reports" },
-@{ Name = "Verification"; Url = "http://localhost:8083/api/v1/verify/metrics" },
-@{ Name = "Analytics"; Url = "http://localhost:8084/api/v1/analytics/anomalies" },
-@{ Name = "Gateway"; Url = "http://localhost:8080/api/v1/stations" },
-@{ Name = "Frontend"; Url = "http://localhost:3000" }
+$healthChecks = @(
+    @{ Name = "Ingestion Actuator"; Url = "http://localhost:8081/actuator/health" },
+    @{ Name = "Citizen Actuator";   Url = "http://localhost:8082/actuator/health" },
+    @{ Name = "Verify Actuator";    Url = "http://localhost:8083/actuator/health" },
+    @{ Name = "Analytics Actuator"; Url = "http://localhost:8084/actuator/health" },
+    @{ Name = "Gateway Actuator";   Url = "http://localhost:8080/actuator/health" }
+)
+
+$apiChecks = @(
+    @{ Name = "Stations API";     Url = "http://localhost:8080/api/v1/stations" },
+    @{ Name = "Citizen Reports";  Url = "http://localhost:8080/api/v1/reports" },
+    @{ Name = "Verify Metrics";   Url = "http://localhost:8080/api/v1/verify/metrics" },
+    @{ Name = "Active Alerts";    Url = "http://localhost:8080/api/v1/alerts/active" },
+    @{ Name = "District Anomalies"; Url = "http://localhost:8080/api/v1/analytics/anomalies" },
+    @{ Name = "System Stats";     Url = "http://localhost:8080/api/v1/analytics/system-stats" },
+    @{ Name = "CAP 1.2 XML Feed"; Url = "http://localhost:8080/api/v1/alerts/feed/cap" }
 )
 
 $passed = 0
-$total = $urls.Count
+$total = $healthChecks.Count + $apiChecks.Count
 
-Write-Host ""
-Write-Host "Checking services..." -ForegroundColor Yellow
-Write-Host ""
+Write-Host "`n[1] Checking Microservice Actuator Health Endpoints..." -ForegroundColor Yellow
+foreach ($item in $healthChecks) {
+    try {
+        $response = Invoke-WebRequest -Uri $item.Url -TimeoutSec 5 -UseBasicParsing
+        Write-Host ("PASS  {0,-22} HTTP {1}" -f $item.Name, $response.StatusCode) -ForegroundColor Green
+        $passed++
+    }
+    catch {
+        Write-Host ("FAIL  {0,-22} {1}" -f $item.Name, $_.Exception.Message) -ForegroundColor Red
+    }
+}
 
-foreach ($item in $urls) {
+Write-Host "`n[2] Checking API Gateway Reverse Proxy Routes..." -ForegroundColor Yellow
+foreach ($item in $apiChecks) {
+    try {
+        $response = Invoke-WebRequest -Uri $item.Url -TimeoutSec 5 -UseBasicParsing
+        Write-Host ("PASS  {0,-22} HTTP {1}" -f $item.Name, $response.StatusCode) -ForegroundColor Green
+        $passed++
+    }
+    catch {
+        Write-Host ("FAIL  {0,-22} {1}" -f $item.Name, $_.Exception.Message) -ForegroundColor Red
+    }
+}
+
+Write-Host "`n[3] Testing AI Ingestion Pipeline (POST /api/v1/ingestion/events)..." -ForegroundColor Yellow
+$aiPayload = @{
+    eventId = "event-val-test-" + (Get-Random -Minimum 1000 -Maximum 9999)
+    eventType = "FLOOD"
+    source = "AI_ANALYSIS"
+    location = @{
+        city = "Mumbai"
+        state = "Maharashtra"
+        latitude = 19.0760
+        longitude = 72.8777
+    }
+    severity = "HIGH"
+    confidence = 94.0
+    reportCount = 100
+    summary = "Validation pipeline flood event test"
+} | ConvertTo-Json
+
 try {
-$response = Invoke-WebRequest -Uri $item.Url -TimeoutSec 5 -UseBasicParsing
-Write-Host ("PASS  {0,-15} HTTP {1}" -f $item.Name, $response.StatusCode) -ForegroundColor Green
-$passed++
+    $aiRes = Invoke-RestMethod -Uri "http://localhost:8080/api/v1/ingestion/events" -Method Post -Body $aiPayload -ContentType "application/json" -TimeoutSec 5
+    Write-Host ("PASS  {0,-22} Status: {1}" -f "AI Event Ingestion", $aiRes.status) -ForegroundColor Green
+    $passed++
+    $total++
 }
 catch {
-Write-Host ("FAIL  {0,-15} {1}" -f $item.Name, $_.Exception.Message) -ForegroundColor Red
-}
+    Write-Host ("FAIL  {0,-22} {1}" -f "AI Event Ingestion", $_.Exception.Message) -ForegroundColor Red
+    $total++
 }
 
 Write-Host ""
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host " RESULT: $passed / $total SERVICES AVAILABLE" -ForegroundColor White
+Write-Host " RESULT: $passed / $total CHECKS PASSED" -ForegroundColor White
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host ""
-
-if ($passed -eq $total) {
-Write-Host "OVERALL RESULT: PLATFORM IS UP" -ForegroundColor Green
-}
-else {
-Write-Host "OVERALL RESULT: SOME SERVICES NEED ATTENTION" -ForegroundColor Yellow
-}
-
 Write-Host ""

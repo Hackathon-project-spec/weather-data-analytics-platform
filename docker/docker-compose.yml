@@ -89,6 +89,116 @@ services:
     networks:
       - weather-net
 
+  # Backend Microservices (Profile: services / all)
+  ingestion-service:
+    build:
+      context: ../weather-platform-backend/ingestion-service
+      dockerfile: Dockerfile
+    container_name: weather-ingestion-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - weather-net
+    profiles: ["services", "all"]
+
+  citizen-service:
+    build:
+      context: ../weather-platform-backend/citizen-service
+      dockerfile: Dockerfile
+    container_name: weather-citizen-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      VERIFICATION_SERVICE_URL: http://verification-engine:8083
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - weather-net
+    profiles: ["services", "all"]
+
+  verification-engine:
+    build:
+      context: ../weather-platform-backend/verification-engine
+      dockerfile: Dockerfile
+    container_name: weather-verification-engine
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      INGESTION_SERVICE_URL: http://ingestion-service:8081
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - weather-net
+    profiles: ["services", "all"]
+
+  analytics-service:
+    build:
+      context: ../weather-platform-backend/analytics-service
+      dockerfile: Dockerfile
+    container_name: weather-analytics-service
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      CLICKHOUSE_URL: jdbc:ch://clickhouse:8123/weather_db
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - weather-net
+    profiles: ["services", "all"]
+
+  api-gateway:
+    build:
+      context: ../weather-platform-backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: weather-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      INGESTION_SERVICE_URL: http://ingestion-service:8081
+      CITIZEN_SERVICE_URL: http://citizen-service:8082
+      VERIFICATION_SERVICE_URL: http://verification-engine:8083
+      ANALYTICS_SERVICE_URL: http://analytics-service:8084
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - weather-net
+    profiles: ["services", "all"]
+
 networks:
   weather-net:
     driver: bridge

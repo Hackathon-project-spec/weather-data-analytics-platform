@@ -54,4 +54,21 @@ public class KafkaProducerConfig {
     public KafkaTemplate<String, SocialFeedEvent> socialKafkaTemplate() {
         return new KafkaTemplate<>(socialProducerFactory());
     }
+
+    @Bean
+    public ProducerFactory<String, in.gov.moes.sih26069.common.dto.AiEventDTO> aiEventProducerFactory() {
+        Map<String, Object> configProps = new HashMap<>();
+        configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        configProps.put(ProducerConfig.RETRIES_CONFIG, 3);
+        configProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 3000);
+        configProps.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 1500);
+        return new DefaultKafkaProducerFactory<>(configProps);
+    }
+
+    @Bean
+    public KafkaTemplate<String, in.gov.moes.sih26069.common.dto.AiEventDTO> aiEventKafkaTemplate() {
+        return new KafkaTemplate<>(aiEventProducerFactory());
+    }
 }

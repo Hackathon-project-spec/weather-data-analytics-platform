@@ -40,7 +40,13 @@ public class CitizenReportService {
 
     @Transactional
     public CitizenReportEntity submitReport(CitizenReportEvent event) {
-        if (event.getReportId() == null || event.getReportId().isBlank()) {
+        if (event.getReportId() != null && !event.getReportId().isBlank()) {
+            Optional<CitizenReportEntity> existing = repository.findById(event.getReportId());
+            if (existing.isPresent()) {
+                log.info("Duplicate citizen report submission detected for ID={}. Returning existing entity.", event.getReportId());
+                return existing.get();
+            }
+        } else {
             event.setReportId("rep-" + UUID.randomUUID().toString().substring(0, 10));
         }
 
