@@ -6,6 +6,7 @@ import in.gov.moes.sih26069.common.enums.OperationalEventStatus;
 import in.gov.moes.sih26069.common.event.TelemetryEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
@@ -144,34 +145,52 @@ public class ClickHouseTimeSeriesService {
         }
     }
 
+    @Autowired(required = false)
+    private in.gov.moes.sih26069.analytics.repository.AiEventRepository aiEventRepository;
+
+    @Autowired(required = false)
+    private in.gov.moes.sih26069.analytics.repository.WeatherAlertRepository alertRepository;
+
     public List<TimeSeriesPoint> getTimeSeriesForStation(String stationId, String range) {
         List<TimeSeriesPoint> points = new ArrayList<>();
-        Deque<TelemetryEvent> deque = telemetryByStation.get(stationId);
 
-        Instant now = Instant.now();
-        int intervals = 24;
-
-        if (deque != null && !deque.isEmpty()) {
-            List<TelemetryEvent> snapshot = new ArrayList<>(deque);
-            int step = Math.max(1, snapshot.size() / intervals);
-            for (int i = 0; i < snapshot.size(); i += step) {
-                TelemetryEvent e = snapshot.get(i);
-                double histAvg = 4.5 + Math.sin(i * 0.3) * 2.0;
-                points.add(new TimeSeriesPoint(e.getTimestamp(), e.getTemperature(), e.getPrecipitationMm(), e.getWindSpeedKmh(), e.getPressure(), histAvg));
+        // 1. Try querying ClickHouse for actual recorded telemetry
+        try (Connection conn = DriverManager.getConnection(clickhouseUrl, clickhouseUser, clickhousePassword)) {
+            String sql = "SELECT timestamp, temperature, precipitation_mm, wind_speed_kmh, pressure " +
+                    "FROM weather_db.raw_telemetry WHERE station_id = ? ORDER BY timestamp DESC LIMIT 48";
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, stationId);
+                try (var rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        Instant ts = rs.getTimestamp("timestamp").toInstant();
+                        double temp = rs.getFloat("temperature");
+                        double rain = rs.getFloat("precipitation_mm");
+                        double wind = rs.getFloat("wind_speed_kmh");
+                        double press = rs.getFloat("pressure");
+                        points.add(new TimeSeriesPoint(ts, temp, rain, wind, press, 0.0));
+                    }
+                }
             }
+            if (!points.isEmpty()) {
+                Collections.reverse(points);
+                return points;
+            }
+        } catch (Exception e) {
+            log.debug("ClickHouse timeseries query notice (using buffer): {}", e.getMessage());
         }
 
-        if (points.size() < 12) {
-            points.clear();
-            for (int i = 24; i >= 0; i--) {
-                Instant t = now.minus(i * 30, ChronoUnit.MINUTES);
-                double baseTemp = 30.0 + Math.sin((24 - i) * 0.25) * 4.0;
-                double baseRain = Math.max(0.0, 5.0 + Math.cos((24 - i) * 0.4) * 6.0);
-                double baseWind = 14.0 + Math.sin((24 - i) * 0.2) * 5.0;
-                double basePressure = 1008.0 + Math.cos((24 - i) * 0.1) * 2.0;
-                double histAvg = 3.5;
-                points.add(new TimeSeriesPoint(t, Math.round(baseTemp * 10.0) / 10.0, Math.round(baseRain * 10.0) / 10.0,
-                        Math.round(baseWind * 10.0) / 10.0, Math.round(basePressure * 10.0) / 10.0, histAvg));
+        // 2. Query in-memory ring buffer of live telemetry
+        Deque<TelemetryEvent> deque = telemetryByStation.get(stationId);
+        if (deque != null && !deque.isEmpty()) {
+            for (TelemetryEvent e : deque) {
+                points.add(new TimeSeriesPoint(
+                        e.getTimestamp() != null ? e.getTimestamp() : Instant.now(),
+                        e.getTemperature(),
+                        e.getPrecipitationMm(),
+                        e.getWindSpeedKmh(),
+                        e.getPressure(),
+                        0.0
+                ));
             }
         }
 
@@ -181,26 +200,60 @@ public class ClickHouseTimeSeriesService {
     public List<Map<String, Object>> getDistrictAnomalies() {
         List<Map<String, Object>> anomalies = new ArrayList<>();
 
-        anomalies.add(Map.of(
-                "district", "Mumbai Suburban", "state", "Maharashtra",
-                "currentRainfallMm", 88.5, "historicalAvgRainfallMm", 15.2,
-                "anomalyPercent", +482.0, "severity", "EXTREME", "status", "RED_ALERT"
-        ));
-        anomalies.add(Map.of(
-                "district", "Puri", "state", "Odisha",
-                "currentRainfallMm", 65.0, "historicalAvgRainfallMm", 12.0,
-                "anomalyPercent", +441.0, "severity", "SEVERE", "status", "ORANGE_ALERT"
-        ));
-        anomalies.add(Map.of(
-                "district", "New Delhi", "state", "Delhi",
-                "currentTemperature", 47.5, "historicalAvgTemp", 39.0,
-                "anomalyPercent", +21.8, "severity", "SEVERE", "status", "HEATWAVE_WARNING"
-        ));
-        anomalies.add(Map.of(
-                "district", "Kamrup Metropolitan", "state", "Assam",
-                "currentRainfallMm", 42.0, "historicalAvgRainfallMm", 18.0,
-                "anomalyPercent", +133.0, "severity", "MODERATE", "status", "YELLOW_WATCH"
-        ));
+        // 1. Try ClickHouse aggregation
+        try (Connection conn = DriverManager.getConnection(clickhouseUrl, clickhouseUser, clickhousePassword)) {
+            String sql = "SELECT district, state, sum(precipitation_mm) as currentRainfall, avg(precipitation_mm) as avgRainfall, max(temperature) as maxTemp " +
+                    "FROM weather_db.raw_telemetry " +
+                    "GROUP BY district, state " +
+                    "HAVING currentRainfall > 30.0 OR maxTemp > 40.0 " +
+                    "ORDER BY currentRainfall DESC LIMIT 10";
+            try (PreparedStatement ps = conn.prepareStatement(sql);
+                 var rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("district", rs.getString("district"));
+                    map.put("state", rs.getString("state"));
+                    map.put("currentRainfallMm", rs.getDouble("currentRainfall"));
+                    map.put("maxTemperature", rs.getDouble("maxTemp"));
+                    map.put("status", rs.getDouble("currentRainfall") > 70.0 ? "RED_ALERT" : "WARNING");
+                    anomalies.add(map);
+                }
+            }
+            if (!anomalies.isEmpty()) {
+                return anomalies;
+            }
+        } catch (Exception e) {
+            log.debug("ClickHouse anomaly query notice: {}", e.getMessage());
+        }
+
+        // 2. Aggregate from in-memory district precipitation accumulator
+        districtPrecipitationAccumulator.forEach((district, rainTotal) -> {
+            if (rainTotal > 20.0) {
+                Map<String, Object> map = new HashMap<>();
+                map.put("district", district);
+                map.put("currentRainfallMm", Math.round(rainTotal * 10.0) / 10.0);
+                map.put("severity", rainTotal > 80.0 ? "EXTREME" : (rainTotal > 50.0 ? "SEVERE" : "MODERATE"));
+                map.put("status", rainTotal > 80.0 ? "RED_ALERT" : "ORANGE_ALERT");
+                anomalies.add(map);
+            }
+        });
+
+        // If active events exist in PostgreSQL, include them as anomalies
+        if (aiEventRepository != null) {
+            try {
+                var activeEvents = aiEventRepository.findByOperationalStatusOrderByCreatedAtDesc(OperationalEventStatus.ACTIVE_ALERT);
+                for (var event : activeEvents) {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("district", event.getCity() != null ? event.getCity() : "Regional");
+                    map.put("state", event.getState() != null ? event.getState() : "India");
+                    map.put("severity", event.getSeverity());
+                    map.put("eventType", event.getEventType());
+                    map.put("confidence", event.getConfidence());
+                    map.put("status", "ACTIVE_ALERT");
+                    anomalies.add(map);
+                }
+            } catch (Exception ignored) {}
+        }
 
         return anomalies;
     }
@@ -210,20 +263,64 @@ public class ClickHouseTimeSeriesService {
     }
 
     public Map<String, Object> getSeverityBreakdown() {
-        Map<String, Object> breakdown = new HashMap<>();
-        breakdown.put("EXTREME", 1);
-        breakdown.put("HIGH", 2);
-        breakdown.put("MODERATE", 5);
-        breakdown.put("LOW", 8);
+        Map<String, Object> breakdown = new LinkedHashMap<>();
+
+        if (aiEventRepository != null) {
+            try {
+                long extreme = aiEventRepository.countBySeverity("EXTREME");
+                long high = aiEventRepository.countBySeverity("HIGH");
+                long moderate = aiEventRepository.countBySeverity("MODERATE");
+                long low = aiEventRepository.countBySeverity("LOW");
+
+                breakdown.put("EXTREME", extreme);
+                breakdown.put("HIGH", high);
+                breakdown.put("MODERATE", moderate);
+                breakdown.put("LOW", low);
+                return breakdown;
+            } catch (Exception e) {
+                log.debug("Severity breakdown repository query notice: {}", e.getMessage());
+            }
+        }
+
+        // In-memory counter fallback
+        long ext = 0, hi = 0, mod = 0, lo = 0;
+        synchronized (recentAiEventAnalytics) {
+            for (Map<String, Object> ev : recentAiEventAnalytics) {
+                String sev = String.valueOf(ev.get("severity"));
+                if ("EXTREME".equalsIgnoreCase(sev)) ext++;
+                else if ("HIGH".equalsIgnoreCase(sev)) hi++;
+                else if ("MODERATE".equalsIgnoreCase(sev)) mod++;
+                else if ("LOW".equalsIgnoreCase(sev)) lo++;
+            }
+        }
+        breakdown.put("EXTREME", ext);
+        breakdown.put("HIGH", hi);
+        breakdown.put("MODERATE", mod);
+        breakdown.put("LOW", lo);
         return breakdown;
     }
 
     public List<Map<String, Object>> getRegionalSummary() {
         List<Map<String, Object>> regions = new ArrayList<>();
-        regions.add(Map.of("region", "Western Coast", "state", "Maharashtra", "activeStations", 4, "avgRainfallMm", 52.4, "alertStatus", "RED_ALERT"));
-        regions.add(Map.of("region", "Eastern Coast", "state", "Odisha", "activeStations", 4, "avgRainfallMm", 41.2, "alertStatus", "ORANGE_ALERT"));
-        regions.add(Map.of("region", "Northern Plains", "state", "Delhi", "activeStations", 4, "avgTemperature", 42.8, "alertStatus", "HEATWAVE_WARNING"));
-        regions.add(Map.of("region", "Southern Peninsula", "state", "Karnataka", "activeStations", 3, "avgRainfallMm", 8.4, "alertStatus", "NORMAL"));
+
+        if (aiEventRepository != null) {
+            try {
+                var allEvents = aiEventRepository.findAllByOrderByCreatedAtDesc();
+                Map<String, Long> stateCounts = new HashMap<>();
+                for (var ev : allEvents) {
+                    if (ev.getState() != null) {
+                        stateCounts.merge(ev.getState(), 1L, Long::sum);
+                    }
+                }
+                stateCounts.forEach((st, count) -> {
+                    Map<String, Object> reg = new HashMap<>();
+                    reg.put("state", st);
+                    reg.put("eventCount", count);
+                    regions.add(reg);
+                });
+            } catch (Exception ignored) {}
+        }
+
         return regions;
     }
 
@@ -232,6 +329,11 @@ public class ClickHouseTimeSeriesService {
     }
 
     public long getTotalAiEventsRecorded() {
+        if (aiEventRepository != null) {
+            try {
+                return aiEventRepository.count();
+            } catch (Exception ignored) {}
+        }
         return totalAiEventsRecorded.get();
     }
 }

@@ -155,3 +155,21 @@ INSERT INTO stations (id, code, name, state, district, latitude, longitude, alti
 ('stn-shi-01', 'SLV-CTY', 'Shimla Ridge AWS', 'Himachal Pradesh', 'Shimla', 31.1048, 77.1734, 2205.0, 'AWS'),
 ('stn-sri-01', 'SXR-CTY', 'Srinagar Aerodrome AWS', 'Jammu and Kashmir', 'Srinagar', 34.0837, 74.7973, 1585.0, 'AWS')
 ON CONFLICT (id) DO NOTHING;
+
+-- Seed Initial Demonstration Alerts in PostgreSQL Database
+INSERT INTO weather_alerts (
+    id, identifier, sender, sent_at, status, msg_type, severity, urgency, certainty,
+    event_category, headline, description, instruction, affected_state, affected_district,
+    center_lat, center_lon, radius_km, effective_from, expires_at, is_active
+) VALUES
+('alt-seed-mum', 'MOES-MUMBAI-FLASH-FLOOD-2026-001', 'MoES-IMD-Analytics-DSS', CURRENT_TIMESTAMP, 'Actual', 'Alert', 'Extreme', 'Immediate', 'Observed',
+ 'Flood', 'FLASH FLOOD EMERGENCY: Mumbai City and Western Suburbs',
+ 'Automatic Weather Stations record >85mm/hr precipitation. Multiple verified citizen ground reports confirm waterlogging >3ft at Dadar, Kurla, and Parel.',
+ 'Avoid low-lying areas. Railway services disrupted on Central & Western lines. Contact disaster helpline 1916.',
+ 'Maharashtra', 'Mumbai Suburban', 19.0896, 72.8656, 20.0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '24 HOUR', TRUE),
+('alt-seed-odi', 'MOES-ODISHA-CYCLONE-2026-002', 'MoES-IMD-Analytics-DSS', CURRENT_TIMESTAMP, 'Actual', 'Alert', 'Severe', 'Immediate', 'Observed',
+ 'Cyclone', 'CYCLONE SQUALL WARNING: Coastal Odisha (Puri - Paradip Sector)',
+ 'Coastal radar stations record 110-125 km/h squall winds and pressure drop to 982 hPa. High storm surge expected.',
+ 'Complete suspension of fishing operations. Residents within 5km of coastline advised to evacuate to cyclone shelters.',
+ 'Odisha', 'Puri', 19.8135, 85.8312, 35.0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '24 HOUR', TRUE)
+ON CONFLICT (id) DO NOTHING;

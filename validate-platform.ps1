@@ -14,13 +14,15 @@ $healthChecks = @(
 )
 
 $apiChecks = @(
-    @{ Name = "Stations API";     Url = "http://localhost:8080/api/v1/stations" },
-    @{ Name = "Citizen Reports";  Url = "http://localhost:8080/api/v1/reports" },
-    @{ Name = "Verify Metrics";   Url = "http://localhost:8080/api/v1/verify/metrics" },
-    @{ Name = "Active Alerts";    Url = "http://localhost:8080/api/v1/alerts/active" },
+    @{ Name = "Stations API";       Url = "http://localhost:8080/api/v1/stations" },
+    @{ Name = "Events Query";       Url = "http://localhost:8080/api/v1/events" },
+    @{ Name = "Alerts Query";       Url = "http://localhost:8080/api/v1/alerts" },
+    @{ Name = "Active Alerts";      Url = "http://localhost:8080/api/v1/alerts/active" },
+    @{ Name = "Citizen Reports";    Url = "http://localhost:8080/api/v1/reports" },
+    @{ Name = "Verify Metrics";     Url = "http://localhost:8080/api/v1/verify/metrics" },
     @{ Name = "District Anomalies"; Url = "http://localhost:8080/api/v1/analytics/anomalies" },
-    @{ Name = "System Stats";     Url = "http://localhost:8080/api/v1/analytics/system-stats" },
-    @{ Name = "CAP 1.2 XML Feed"; Url = "http://localhost:8080/api/v1/alerts/feed/cap" }
+    @{ Name = "System Stats";       Url = "http://localhost:8080/api/v1/analytics/system-stats" },
+    @{ Name = "CAP 1.2 XML Feed";   Url = "http://localhost:8080/api/v1/alerts/feed/cap" }
 )
 
 $passed = 0
@@ -50,7 +52,7 @@ foreach ($item in $apiChecks) {
     }
 }
 
-Write-Host "`n[3] Testing AI Ingestion Pipeline (POST /api/v1/ingestion/events)..." -ForegroundColor Yellow
+Write-Host "`n[3] Testing AI Ingestion Pipeline (POST /api/v1/events/ai)..." -ForegroundColor Yellow
 $aiPayload = @{
     eventId = "event-val-test-" + (Get-Random -Minimum 1000 -Maximum 9999)
     eventType = "FLOOD"
@@ -68,7 +70,7 @@ $aiPayload = @{
 } | ConvertTo-Json
 
 try {
-    $aiRes = Invoke-RestMethod -Uri "http://localhost:8080/api/v1/ingestion/events" -Method Post -Body $aiPayload -ContentType "application/json" -TimeoutSec 5
+    $aiRes = Invoke-RestMethod -Uri "http://localhost:8080/api/v1/events/ai" -Method Post -Body $aiPayload -ContentType "application/json" -TimeoutSec 5
     Write-Host ("PASS  {0,-22} Status: {1}" -f "AI Event Ingestion", $aiRes.status) -ForegroundColor Green
     $passed++
     $total++

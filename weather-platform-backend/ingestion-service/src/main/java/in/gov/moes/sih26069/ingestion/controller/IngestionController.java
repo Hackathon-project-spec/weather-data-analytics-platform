@@ -39,7 +39,7 @@ public class IngestionController {
     @Autowired(required = false)
     private KafkaTemplate<String, SocialFeedEvent> socialKafkaTemplate;
 
-    @PostMapping({"/ingestion/events", "/ingest/events"})
+    @PostMapping({"/events/ai", "/ingestion/events", "/ingest/events"})
     public ResponseEntity<Map<String, Object>> ingestAiEvent(@jakarta.validation.Valid @RequestBody in.gov.moes.sih26069.common.dto.AiEventDTO event) {
         Map<String, Object> result = aiEventIngestionService.ingestAiEvent(event);
         return ResponseEntity.ok(result);

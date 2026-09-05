@@ -35,55 +35,22 @@ public class AlertManagementService {
 
     @PostConstruct
     public void init() {
-        seedInitialAlerts();
         loadActiveAlertsFromPostgres();
     }
 
-    public void seedInitialAlerts() {
-        WeatherAlertEvent a1 = new WeatherAlertEvent();
-        a1.setAlertId("alt-seed-mum");
-        a1.setIdentifier("MOES-MUMBAI-FLASH-FLOOD-2026-001");
-        a1.setSeverity(AlertSeverity.EXTREME);
-        a1.setCategory(DisasterCategory.FLOOD);
-        a1.setHeadline("FLASH FLOOD EMERGENCY: Mumbai City and Western Suburbs");
-        a1.setDescription("Automatic Weather Stations record >85mm/hr precipitation. Multiple verified citizen ground reports confirm waterlogging >3ft at Dadar, Kurla, and Parel.");
-        a1.setInstruction("Avoid low-lying areas. Railway services disrupted on Central & Western lines. Contact disaster helpline 1916.");
-        a1.setAffectedState("Maharashtra");
-        a1.setAffectedDistrict("Mumbai Suburban");
-        a1.setCenterLat(19.0896);
-        a1.setCenterLon(72.8656);
-        a1.setRadiusKm(20.0);
-        a1.setActive(true);
-        cacheActiveAlert(a1);
-
-        WeatherAlertEvent a2 = new WeatherAlertEvent();
-        a2.setAlertId("alt-seed-odi");
-        a2.setIdentifier("MOES-ODISHA-CYCLONE-2026-002");
-        a2.setSeverity(AlertSeverity.SEVERE);
-        a2.setCategory(DisasterCategory.CYCLONE_WIND);
-        a2.setHeadline("CYCLONE SQUALL WARNING: Coastal Odisha (Puri - Paradip Sector)");
-        a2.setDescription("Coastal radar stations record 110-125 km/h squall winds and pressure drop to 982 hPa. High storm surge expected.");
-        a2.setInstruction("Complete suspension of fishing operations. Residents within 5km of coastline advised to evacuate to cyclone shelters.");
-        a2.setAffectedState("Odisha");
-        a2.setAffectedDistrict("Puri");
-        a2.setCenterLat(19.8135);
-        a2.setCenterLon(85.8312);
-        a2.setRadiusKm(35.0);
-        a2.setActive(true);
-        cacheActiveAlert(a2);
-    }
-
-    private void loadActiveAlertsFromPostgres() {
+    public void loadActiveAlertsFromPostgres() {
         if (alertRepository == null) return;
         try {
             List<WeatherAlertEntity> dbAlerts = alertRepository.findByIsActiveTrueAndExpiresAtAfterOrderBySentAtDesc(Instant.now());
+            activeAlerts.clear();
             for (WeatherAlertEntity e : dbAlerts) {
                 WeatherAlertEvent event = entityToEvent(e);
                 activeAlerts.put(event.getAlertId(), event);
+                cacheActiveAlert(event);
             }
-            log.info("Loaded {} active alerts from PostgreSQL weather_alerts", dbAlerts.size());
+            log.info("Loaded and cached {} active alerts from PostgreSQL weather_alerts", dbAlerts.size());
         } catch (Exception e) {
-            log.debug("PostgreSQL alerts init check (using in-memory): {}", e.getMessage());
+            log.debug("PostgreSQL alerts init check notice: {}", e.getMessage());
         }
     }
 
@@ -112,7 +79,7 @@ public class AlertManagementService {
     }
 
     public List<WeatherAlertEvent> getActiveAlerts() {
-        // Try reading from Redis first if available
+        // 1. Try reading from Redis first if available
         if (redisTemplate != null) {
             try {
                 Map<Object, Object> entries = redisTemplate.opsForHash().entries(REDIS_ALERTS_KEY);
@@ -128,10 +95,63 @@ public class AlertManagementService {
                     }
                 }
             } catch (Exception e) {
-                log.debug("Redis cache read notice (falling back to memory): {}", e.getMessage());
+                log.debug("Redis cache read notice (falling back to database/memory): {}", e.getMessage());
+            }
+        }
+
+        // 2. Query PostgreSQL repository for active non-expired alerts
+        if (alertRepository != null) {
+            try {
+                List<WeatherAlertEntity> dbAlerts = alertRepository.findByIsActiveTrueAndExpiresAtAfterOrderBySentAtDesc(Instant.now());
+                if (!dbAlerts.isEmpty()) {
+                    List<WeatherAlertEvent> list = new ArrayList<>();
+                    for (WeatherAlertEntity entity : dbAlerts) {
+                        WeatherAlertEvent event = entityToEvent(entity);
+                        list.add(event);
+                        activeAlerts.put(event.getAlertId(), event);
+                    }
+                    return list;
+                }
+            } catch (Exception e) {
+                log.debug("PostgreSQL active alerts query notice: {}", e.getMessage());
+            }
+        }
+
+        return new ArrayList<>(activeAlerts.values());
+    }
+
+    public List<WeatherAlertEvent> getAllAlerts(AlertSeverity severity, DisasterCategory category, String state, Boolean active) {
+        if (alertRepository != null) {
+            try {
+                List<WeatherAlertEntity> list;
+                if (active != null) {
+                    list = alertRepository.findByIsActiveOrderBySentAtDesc(active);
+                } else if (severity != null) {
+                    list = alertRepository.findBySeverityOrderBySentAtDesc(severity);
+                } else if (category != null) {
+                    list = alertRepository.findByEventCategoryOrderBySentAtDesc(category);
+                } else if (state != null && !state.isBlank()) {
+                    list = alertRepository.findByAffectedStateOrderBySentAtDesc(state);
+                } else {
+                    list = alertRepository.findAllByOrderBySentAtDesc();
+                }
+                return list.stream().map(this::entityToEvent).toList();
+            } catch (Exception e) {
+                log.warn("Error fetching alerts from repository: {}", e.getMessage());
             }
         }
         return new ArrayList<>(activeAlerts.values());
+    }
+
+    public Optional<WeatherAlertEvent> getAlertById(String id) {
+        if (alertRepository != null) {
+            try {
+                return alertRepository.findById(id).map(this::entityToEvent);
+            } catch (Exception e) {
+                log.warn("Error finding alert by ID {}: {}", id, e.getMessage());
+            }
+        }
+        return Optional.ofNullable(activeAlerts.get(id));
     }
 
     public String generateCapXmlFeed() {

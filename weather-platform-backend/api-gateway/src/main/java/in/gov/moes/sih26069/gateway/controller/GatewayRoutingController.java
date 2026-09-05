@@ -33,28 +33,65 @@ public class GatewayRoutingController {
     private final RestTemplate restTemplate = new RestTemplate();
 
     @RequestMapping(value = {
-            "/api/v1/stations/**",
-            "/api/v1/simulator/**",
-            "/api/v1/ingest/**",
+            "/api/v1/events/ai",
             "/api/v1/ingestion/**",
-            "/api/ingestion/**"
-    }, method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
+            "/api/v1/ingestion",
+            "/api/v1/ingest/**",
+            "/api/v1/ingest",
+            "/api/ingestion/**",
+            "/api/v1/simulator/**",
+            "/api/v1/simulator"
+    }, method = {RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
     public ResponseEntity<byte[]> routeIngestionService(@RequestBody(required = false) byte[] body, HttpMethod method, HttpServletRequest request) {
         return forwardRequest(ingestionServiceUrl, request, method, body);
     }
 
-    @RequestMapping(value = "/api/v1/reports/**", method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
+    @RequestMapping(value = {
+            "/api/v1/stations/**",
+            "/api/v1/stations",
+            "/api/v1/simulator/**",
+            "/api/v1/simulator"
+    }, method = RequestMethod.GET)
+    public ResponseEntity<byte[]> routeIngestionGet(@RequestBody(required = false) byte[] body, HttpMethod method, HttpServletRequest request) {
+        return forwardRequest(ingestionServiceUrl, request, method, body);
+    }
+
+    @RequestMapping(value = {
+            "/api/v1/events",
+            "/api/v1/events/**"
+    }, method = RequestMethod.GET)
+    public ResponseEntity<byte[]> routeEventsGet(@RequestBody(required = false) byte[] body, HttpMethod method, HttpServletRequest request) {
+        return forwardRequest(analyticsServiceUrl, request, method, body);
+    }
+
+    @RequestMapping(value = {
+            "/api/v1/events",
+            "/api/v1/events/**"
+    }, method = RequestMethod.POST)
+    public ResponseEntity<byte[]> routeEventsPost(@RequestBody(required = false) byte[] body, HttpMethod method, HttpServletRequest request) {
+        return forwardRequest(ingestionServiceUrl, request, method, body);
+    }
+
+    @RequestMapping(value = {
+            "/api/v1/reports",
+            "/api/v1/reports/**"
+    }, method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
     public ResponseEntity<byte[]> routeCitizenService(@RequestBody(required = false) byte[] body, HttpMethod method, HttpServletRequest request) {
         return forwardRequest(citizenServiceUrl, request, method, body);
     }
 
-    @RequestMapping(value = "/api/v1/verify/**", method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
+    @RequestMapping(value = {
+            "/api/v1/verify",
+            "/api/v1/verify/**"
+    }, method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
     public ResponseEntity<byte[]> routeVerificationService(@RequestBody(required = false) byte[] body, HttpMethod method, HttpServletRequest request) {
         return forwardRequest(verificationServiceUrl, request, method, body);
     }
 
     @RequestMapping(value = {
+            "/api/v1/analytics",
             "/api/v1/analytics/**",
+            "/api/v1/alerts",
             "/api/v1/alerts/**"
     }, method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
     public ResponseEntity<byte[]> routeAnalyticsService(@RequestBody(required = false) byte[] body, HttpMethod method, HttpServletRequest request) {

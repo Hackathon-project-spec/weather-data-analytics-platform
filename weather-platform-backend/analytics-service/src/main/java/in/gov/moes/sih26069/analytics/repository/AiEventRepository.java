@@ -11,5 +11,12 @@ import java.util.List;
 public interface AiEventRepository extends JpaRepository<AiEventEntity, String> {
     List<AiEventEntity> findByOperationalStatusOrderByCreatedAtDesc(OperationalEventStatus status);
     List<AiEventEntity> findByEventTypeOrderByCreatedAtDesc(String eventType);
+    List<AiEventEntity> findBySeverityOrderByCreatedAtDesc(String severity);
+    List<AiEventEntity> findByStateOrderByCreatedAtDesc(String state);
+    List<AiEventEntity> findByCityOrderByCreatedAtDesc(String city);
     List<AiEventEntity> findAllByOrderByCreatedAtDesc();
+
+    long countByOperationalStatus(OperationalEventStatus status);
+    long countBySeverity(String severity);
+    long countByEventType(String eventType);
 }
